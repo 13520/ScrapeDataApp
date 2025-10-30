@@ -1,0 +1,6 @@
+@Shopster.API_HostAddress = http://localhost:5197
+
+GET {{Shopster.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
