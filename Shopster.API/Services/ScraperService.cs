@@ -216,6 +216,87 @@ namespace Shopster.API.Services
             return results.SelectMany(x => x).ToList();
         }
 
+        public async Task<List<Client>> TestTestSimple()
+        { 
+            var playwright = await Playwright.CreateAsync();
+            var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true
+            });
 
+            var page = await browser.NewPageAsync();    
+            await page.GotoAsync("https://datatables.net/extensions/scroller/examples/initialisation/state_saving.html");
+
+            await page.WaitForFunctionAsync("() => @('#example').DataTable().rows().count() > 0");
+
+            var data = await page.EvaluateAsync<string[][]>(@"() => {
+            
+                return $('#example').DataTable().rows().data().toArray();
+            }");
+
+            var clients = data
+                .Where(row => row.Length >= 5)
+                .Select(row => new Client
+                {
+                    FirstName = row[1],
+                    LastName = row[2],
+                    ZipCode = row[3],
+                    Country = row[4]
+                }).ToList() ;
+
+            return clients;
+
+        }
+
+        public async Task<List<Client>> ScrapeAsyncTurbo(IEnumerable<string> urls, int maxDegreeOfParallelism = 10)
+        { 
+            var clients = new List<Client>();
+            var clientLock = new object();
+
+            using var playwright = await Playwright.CreateAsync();
+            var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                Headless = true
+            });
+
+            await Parallel.ForEachAsync(urls, new ParallelOptions { MaxDegreeOfParallelism = maxDegreeOfParallelism }, async (url, _) =>
+            {
+                try
+                {
+                    var context = await browser.NewContextAsync();
+                    var page = await context.NewPageAsync();
+                    await page.GotoAsync(url);
+                    await page.WaitForFunctionAsync("() => $('#example').DataTable().rows().count() > 0");
+
+                    var data = await page.EvaluateAsync<string[][]>(@"() => {
+                        return $('#example').DataTable().rows().data().toArray();
+                    }");
+
+                    var extractedClients = data
+                        .Where(row => row.Length >= 5)
+                        .Select(row => new Client
+                        {
+                            FirstName = row[1],
+                            LastName = row[2],
+                            ZipCode = row[3],
+                            Country = row[4]
+                        }).ToList();
+
+                    lock (clientLock)
+                    { 
+                        clients.AddRange(extractedClients);
+                    }
+
+                    await page.CloseAsync();
+                    await context.CloseAsync();
+
+                }
+                catch (Exception)
+                {
+                }
+            }
+            );
+            return clients;
+        }
     }
 }
